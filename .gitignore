@@ -46,3 +46,15 @@ Thumbs.db
 
 # node_modules
 node_modules/
+
+# Build outputs
+dist/
+coverage/
+
+# Database
+*.db
+*.db-journal
+
+# Environment
+.env.local
+.env.*.local
