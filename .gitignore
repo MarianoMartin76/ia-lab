@@ -58,3 +58,6 @@ coverage/
 # Environment
 .env.local
 .env.*.local
+
+# code-reviwes
+code-reviews/
