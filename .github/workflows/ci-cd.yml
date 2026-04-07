@@ -128,7 +128,7 @@ jobs:
       
       - name: Run tests
         working-directory: frontend
-        run: npm test -- --run --passWithNoTests
+        run: npm test -- --passWithNoTests
 
   auto-heal:
     needs: [test-backend, test-frontend]
