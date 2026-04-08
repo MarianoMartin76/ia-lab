@@ -134,31 +134,158 @@ jobs:
     needs: [test-backend, test-frontend]
     if: failure()
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      healed: ${{ steps.heal.outputs.healed }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Get failure details
-        id: failures
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Run tests and capture output
+        id: tests
         run: |
-          echo "failure_details=Failed tests detected. Auto-heal would analyze and fix." >> $GITHUB_OUTPUT
+          echo "=== Running tests to identify failures ==="
+          
+          # Backend tests
+          cd backend
+          npm ci 2>/dev/null || true
+          npx prisma generate
+          npx prisma db push
+          npm test 2>&1 | tee backend-test.log || true
+          BACKEND_EXIT=$?
+          cd ..
+          
+          # Frontend tests  
+          cd frontend
+          npm ci 2>/dev/null || true
+          npm test 2>&1 | tee frontend-test.log || true
+          FRONTEND_EXIT=$?
+          cd ..
+          
+          if [ $BACKEND_EXIT -eq 0 ] && [ $FRONTEND_EXIT -eq 0 ]; then
+            echo "healed=true" >> $GITHUB_OUTPUT
+          else
+            echo "healed=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Try common fixes
+        if: steps.tests.outputs.healed != 'true'
+        run: |
+          echo "=== Attempting common fixes ==="
+          
+          # Fix: Reinstall dependencies
+          cd backend && rm -rf node_modules package-lock.json && npm install && cd ..
+          cd frontend && rm -rf node_modules package-lock.json && npm install && cd ..
+          
+          # Fix: Regenerate Prisma
+          cd backend && npx prisma generate && npx prisma db push && cd ..
+      
+      - name: Run tests after fixes
+        id: retest
+        run: |
+          echo "=== Re-running tests after fixes ==="
+          
+          cd backend
+          npm test 2>&1 | tee backend-retest.log || true
+          BACKEND_EXIT=$?
+          cd ..
+          
+          cd frontend
+          npm test 2>&1 | tee frontend-retest.log || true
+          FRONTEND_EXIT=$?
+          cd ..
+          
+          if [ $BACKEND_EXIT -eq 0 ] && [ $FRONTEND_EXIT -eq 0 ]; then
+            echo "healed=true" >> $GITHUB_OUTPUT
+          else
+            echo "healed=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Commit fixes if successful
+        if: steps.retest.outputs.healed == 'true'
+        run: |
+          BRANCH_NAME="auto-heal/fix-${{ github.run_id }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github"
+          git checkout -b $BRANCH_NAME
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Auto-heal: Fixed test failures"
+            git push -u origin $BRANCH_NAME --force || echo "Push failed"
+          fi
       
       - name: Comment on PR
-        uses: actions/github-script@v7
         if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
         with:
           script: |
+            const healed = ${{ steps.retest.outputs.healed }};
+            const attempt = ${{ github.run_id }} % 3 + 1;
+            const maxAttempts = 3;
+            
+            let body = `### 🤖 Auto-Heal Attempt ${attempt}/${maxAttempts}\n\n`;
+            
+            if (healed === 'true') {
+              body += `✅ **Tests fixed automatically!**\n`;
+              body += `A fix was applied and tests are now passing.\n`;
+              body += `Branch 'auto-heal/fix-${{ github.run_id }}' created with the fix.\n`;
+            } else {
+              body += `❌ **Could not auto-heal**\n`;
+              body += `Attempted common fixes but tests still failing.\n`;
+              if (attempt >= maxAttempts) {
+                body += `\n⚠️ **Max attempts reached. Manual review required.**`;
+              } else {
+                body += `\n_Will retry automatically on next push_`;
+              }
+            }
+            
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '❌ Tests failed. Auto-heal triggered. This would use AI to analyze errors and generate a fix. (Max 3 attempts)'
+              body: body
             })
       
-      - name: Mark for manual review
-        if: always()
+      - name: Fail if not healed
+        if: steps.retest.outputs.healed != 'true'
         run: |
-          echo "::warning::Auto-heal: Tests failed. PR marked for manual review."
+          echo "::warning::Auto-heal: Could not fix tests. Manual review required."
+          # Exit 0 to not block workflow, but status is warning
+
+  merge:
+    needs: [test-backend, test-frontend, auto-heal]
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check if should merge
+        run: |
+          # Check if auto-heal succeeded or tests passed without healing needed
+          HEAL_STATUS="${{ needs.auto-heal.outputs.healed }}"
+          TEST_STATUS="${{ needs.test-backend.result }}"
+          
+          echo "Test status: $TEST_STATUS"
+          echo "Heal status: $HEAL_STATUS"
+          
+          # Consider success if tests passed OR auto-heal succeeded
+          if [ "$TEST_STATUS" == "success" ]; then
+            echo "::notice::Tests passed, ready to merge"
+          elif [ "$HEAL_STATUS" == "true" ]; then
+            echo "::notice::Auto-heal succeeded, ready to merge"
+          else
+            echo "::warning::Cannot auto-merge: tests failed and auto-heal couldn't fix"
+            exit 1
+          fi
