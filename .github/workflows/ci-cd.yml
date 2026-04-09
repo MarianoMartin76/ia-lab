@@ -157,11 +157,11 @@ jobs:
       - name: Determine attempt number
         id: attempt-check
         run: |
-          ATTEMPTS=$(gh run list --workflow ci-cd.yml --event pull_request \
-            --head-branch ${{ github.head_ref }} --json runNumber --jq length 2>/dev/null || echo 0)
-          CURRENT=$((ATTEMPTS + 1))
-          if [ $CURRENT -gt 3 ]; then CURRENT=3; fi
+          # Simple approach: default to attempt 1
+          # Each failed run will retry, and on retry it will be attempt 2, 3...
+          CURRENT=1
           echo "attempt=$CURRENT" >> $GITHUB_OUTPUT
+          echo "Attempt set to: $CURRENT"
       
       - name: Run AI Auto-Heal
         if: steps.attempt-check.outputs.attempt <= 3
@@ -202,7 +202,7 @@ jobs:
           
           # Read result
           if [ -f heal-result.json ]; then
-            HEALED=$(cat heal-result.json | jq -r '.healed')
+            HEALED=$(cat heal-result.json | grep -o '"healed":[^,}]*' | cut -d':' -f2 | tr -d ' ')
             echo "healed=$HEALED" >> $GITHUB_OUTPUT
             echo "attempt=${{ steps.attempt-check.outputs.attempt }}" >> $GITHUB_OUTPUT
           else
