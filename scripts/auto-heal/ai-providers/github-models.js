@@ -29,13 +29,20 @@ export class GitHubModelsProvider {
   async generateFix(context) {
     const prompt = this.buildPrompt(context);
     
+    // Try GITHUB_TOKEN first, then GH_TOKEN
+    const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+    
+    if (!token) {
+      throw new Error('No GitHub token available (GITHUB_TOKEN or GH_TOKEN)');
+    }
+    
     try {
       const response = await fetch(
         'https://models.github.ai/inference/chat/completions',
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
             'Accept': 'application/vnd.github+json',
             'X-GitHub-Api-Version': '2022-11-28'

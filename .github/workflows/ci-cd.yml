@@ -199,6 +199,21 @@ jobs:
           # Run AI heal script from root
           cd $ROOT_DIR/scripts/auto-heal
           npm install
+          
+          # Debug: show available env vars (masked)
+          echo "GITHUB_TOKEN exists: ${{ !! secrets.GITHUB_TOKEN }}"
+          echo "GH_TOKEN exists: ${{ !! secrets.GH_TOKEN }}"
+          
+          # Try with explicit token
+          GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          if [ -z "$GH_TOKEN" ]; then
+            GH_TOKEN="${{ secrets.GH_TOKEN }}"
+          fi
+          echo "Using token: ${GH_TOKEN:0:8}..."
+          
+          export GITHUB_TOKEN="$GH_TOKEN"
+          export GH_TOKEN="$GH_TOKEN"
+          
           node index.js \
             --test-results $ROOT_DIR/test-results \
             --context-root $ROOT_DIR \
