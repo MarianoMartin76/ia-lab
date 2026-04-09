@@ -229,7 +229,7 @@ jobs:
             echo "healed=false" >> $GITHUB_OUTPUT
           fi
       
-      - name: Push fix branch if healed
+      - name: Push fix branch and create PR
         if: steps.heal.outputs.healed == 'true'
         run: |
           BRANCH_NAME="auto-heal/attempt-${{ steps.heal.outputs.attempt }}-${{ github.run_id }}"
@@ -240,6 +240,24 @@ jobs:
           if ! git diff --cached --quiet; then
             git commit -m "🤖 Auto-heal: Fix test failures (attempt ${{ steps.heal.outputs.attempt }})"
             git push -u origin $BRANCH_NAME --force || echo "Push failed"
+            
+            # Create PR using a file for the body
+            cat > /tmp/pr_body.txt << 'EOF'
+            ## Summary
+            - Auto-heal system detected and fixed test failures
+            - Fix applied by AI to test file
+
+            ## Details
+            - Attempt: ${{ steps.heal.outputs.attempt }}/3
+            - Run ID: ${{ github.run_id }}
+
+            _This PR was created automatically by the AI auto-heal system._
+            EOF
+            
+            gh pr create \
+              --title "🤖 Auto-Heal: Fix test failures (Attempt ${{ steps.heal.outputs.attempt }})" \
+              --body-file /tmp/pr_body.txt \
+              --base main || echo "PR creation failed"
           fi
       
       - name: Comment on PR with results
