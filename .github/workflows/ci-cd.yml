@@ -185,14 +185,15 @@ jobs:
           echo "Running frontend tests..."
           cd $ROOT_DIR/frontend
           npm ci
-          # Force JSON output
+          # Force JSON output and ensure it saves
           npx vitest run --reporter=json --outputFile=vitest.output.json 2>&1 | tee $ROOT_DIR/test-results/frontend-output.log || true
+          
+          # ALWAYS copy vitest output to test-results (even if test fails)
+          pwd
+          ls -la vitest.output.json 2>/dev/null && cp vitest.output.json $ROOT_DIR/test-results/frontend-results.json || echo "No vitest output generated"
           
           echo "Test results location: $ROOT_DIR/test-results"
           ls -la $ROOT_DIR/test-results/
-          
-          # Debug: show vitest output file
-          ls -la vitest.output.json 2>/dev/null || echo "No vitest.output.json found"
           
           # Run AI heal script from root
           cd $ROOT_DIR/scripts/auto-heal
