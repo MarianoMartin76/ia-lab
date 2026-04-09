@@ -1,13 +1,29 @@
 #!/usr/bin/env node
 
 import { readFileSync, existsSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { parseJestOutput, parseJestJson } from './analyzers/jest-analyzer.js';
 import { parseVitestOutput, parseVitestJson } from './analyzers/vitest-analyzer.js';
 import GitHubModelsProvider from './ai-providers/github-models.js';
 import ContextGatherer from './utils/context-gatherer.js';
 import FixApplier from './applier/fix-applier.js';
-import config from '../../../config/auto-heal.config.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const defaultConfig = {
+  ai: {
+    provider: 'github-models',
+    fallbackProviders: ['ollama', 'openai'],
+    maxRetries: 2,
+    timeout: 60000
+  },
+  safety: {
+    allowedExtensions: ['.js', '.jsx', '.ts', '.tsx', '.json', '.prisma', '.css'],
+    blockPatterns: [/process\.env.*secret/i, /eval\s*\(/, /exec\s*\(/, /require\s*\(['"]/],
+    maxFileChanges: 10
+  }
+};
 
 const args = process.argv.slice(2);
 const options = {
@@ -26,8 +42,12 @@ for (let i = 0; i < args.length; i++) {
   if (args[i] === '--current-attempt' && args[i + 1]) options.currentAttempt = parseInt(args[i + 1]);
 }
 
+const config = defaultConfig;
+
 console.log('🤖 Auto-Heal Starting...');
 console.log(`Attempt: ${options.currentAttempt}/${options.maxAttempts}`);
+console.log(`Test results: ${options.testResults}`);
+console.log(`Context root: ${options.contextRoot}`);
 console.log(`AI Provider: ${options.aiProvider}`);
 console.log('');
 

@@ -6,6 +6,10 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
-    setupFiles: ['./tests/setup.js']
+    setupFiles: ['./tests/setup.js'],
+    reporters: ['default', 'json'],
+    outputFile: {
+      json: 'vitest.output.json'
+    }
   }
 });

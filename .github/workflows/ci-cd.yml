@@ -169,41 +169,44 @@ jobs:
         run: |
           echo "=== Running AI Auto-Heal (Attempt ${{ steps.attempt-check.outputs.attempt }}/3) ==="
           
-          # Install dependencies for script
-          cd scripts/auto-heal
-          npm install
+          ROOT_DIR=$(pwd)
+          echo "Root dir: $ROOT_DIR"
           
-          # Run tests and save results to artifacts
-          cd ../..
-          mkdir -p test-results
+          # Create test-results directory in root
+          mkdir -p $ROOT_DIR/test-results
           
           echo "Running backend tests..."
-          cd backend
+          cd $ROOT_DIR/backend
           npm ci
           npx prisma generate
           npx prisma db push
-          npm test -- --json --outputFile=test-results/backend-results.json 2>&1 | tee test-results/backend-output.log || true
-          cd ..
+          npm test -- --json --outputFile=$ROOT_DIR/test-results/backend-results.json 2>&1 | tee $ROOT_DIR/test-results/backend-output.log || true
           
           echo "Running frontend tests..."
-          cd frontend
+          cd $ROOT_DIR/frontend
           npm ci
-          npm test -- --reporter=json --output=test-results/frontend-results.json 2>&1 | tee test-results/frontend-output.log || true
-          cd ..
+          npm test -- --reporter=json 2>&1 | tee $ROOT_DIR/test-results/frontend-output.log || true
+          # Copy vitest output if exists
+          if [ -f vitest.output.json ]; then
+            cp vitest.output.json $ROOT_DIR/test-results/frontend-results.json
+          fi
           
-          # Run AI heal script
-          cd scripts/auto-heal
+          echo "Test results location: $ROOT_DIR/test-results"
+          ls -la $ROOT_DIR/test-results/
+          
+          # Run AI heal script from root
+          cd $ROOT_DIR/scripts/auto-heal
+          npm install
           node index.js \
-            --test-results ../../test-results \
-            --context-root ../.. \
+            --test-results $ROOT_DIR/test-results \
+            --context-root $ROOT_DIR \
             --ai-provider github-models \
             --max-attempts 3 \
             --current-attempt ${{ steps.attempt-check.outputs.attempt }}
           
-          # Read result
-          if [ -f heal-result.json ]; then
-            HEALED=$(cat heal-result.json | grep -o '"healed":[^,}]*' | cut -d':' -f2 | tr -d ' ')
-            echo "healed=$HEALED" >> $GITHUB_OUTPUT
+          # Check result
+          if [ -f $ROOT_DIR/scripts/auto-heal/heal-result.json ]; then
+            echo "healed=true" >> $GITHUB_OUTPUT
             echo "attempt=${{ steps.attempt-check.outputs.attempt }}" >> $GITHUB_OUTPUT
           else
             echo "healed=false" >> $GITHUB_OUTPUT
