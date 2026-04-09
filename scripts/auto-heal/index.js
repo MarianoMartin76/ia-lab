@@ -84,15 +84,35 @@ try {
   const frontendLogPath = join(options.testResults, 'frontend-output.log');
   const frontendJsonPath = join(options.testResults, 'frontend-results.json');
   
+  // First try JSON output
   if (existsSync(frontendJsonPath)) {
-    const errors = parseVitestJson(frontendJsonPath, { readFileSync });
-    console.log(`  Found ${errors.length} frontend test failures`);
-    allErrors.push(...errors.map(e => ({ ...e, backend: false })));
-  } else if (existsSync(frontendLogPath)) {
+    const jsonContent = readFileSync(frontendJsonPath, 'utf-8');
+    console.log(`  JSON file size: ${jsonContent.length} bytes`);
+    
+    if (jsonContent.length > 100) {
+      const errors = parseVitestJson(frontendJsonPath, { readFileSync });
+      console.log(`  Found ${errors.length} frontend test failures from JSON`);
+      allErrors.push(...errors.map(e => ({ ...e, backend: false })));
+    }
+  }
+  
+  // Also check log output for failures
+  if (existsSync(frontendLogPath)) {
     const log = readFileSync(frontendLogPath, 'utf-8');
-    const errors = parseVitestOutput(log);
-    console.log(`  Found ${errors.length} frontend test failures`);
-    allErrors.push(...errors.map(e => ({ ...e, backend: false })));
+    console.log(`  Log file size: ${log.length} bytes`);
+    
+    // Look for FAIL patterns in log
+    const failMatches = log.match(/FAIL\s+.*$/gm);
+    if (failMatches) {
+      console.log(`  Found FAIL in log: ${failMatches.length} matches`);
+    }
+    
+    // Also parse the log for errors
+    const logErrors = parseVitestOutput(log);
+    if (logErrors.length > 0 && allErrors.length === 0) {
+      console.log(`  Found ${logErrors.length} errors from log parsing`);
+      allErrors.push(...logErrors.map(e => ({ ...e, backend: false })));
+    }
   }
 } catch (e) {
   console.log('  Could not analyze frontend tests:', e.message);
