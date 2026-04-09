@@ -102,6 +102,35 @@ export function parseVitestJson(jsonFilePath, fs) {
     
     const errors = [];
     
+    // Handle Jest/Vitest JSON format - testResults at root level
+    if (results.testResults && Array.isArray(results.testResults)) {
+      console.log(`  Found ${results.testResults.length} test suites`);
+      
+      for (const suite of results.testResults) {
+        // Vitest/Jest format
+        const tests = suite.assertionResults || suite.tests || [];
+        
+        for (const test of tests) {
+          if (test.status === 'failed' || test.status === 'fail') {
+            const errorMessage = test.message || test.failureMessages?.[0] || '';
+            const errorType = errorMessage.includes('Unable to find') ? 'TestingLibraryElementError' : 'AssertionError';
+            
+            const file = suite.name || suite.file || 'unknown';
+            const testName = test.fullName || test.name || 'Unknown test';
+            
+            errors.push({
+              type: 'assertion_failure',
+              file: file,
+              test: testName,
+              errorMessage: errorMessage,
+              errorType: errorType,
+              stack: test.failureMessages || []
+            });
+          }
+        }
+      }
+    }
+    
     // Handle Vitest 1.x format - testResults array
     if (results.testResults && Array.isArray(results.testResults)) {
       const suites = results.testResults;
@@ -151,20 +180,7 @@ export function parseVitestJson(jsonFilePath, fs) {
       }
     }
     
-    // Handle simple failures array
-    if (results.failures && Array.isArray(results.failures)) {
-      for (const failure of results.failures) {
-        errors.push({
-          type: 'assertion_failure',
-          file: failure.file || failure.test?.file || 'unknown',
-          test: failure.test?.name || failure.name || 'Unknown test',
-          errorMessage: failure.message || failure.error || '',
-          errorType: 'TestError',
-          stack: failure.stack || []
-        });
-      }
-    }
-    
+    console.log(`  Total errors found: ${errors.length}`);
     return errors;
   } catch (e) {
     console.error('Error parsing Vitest JSON:', e.message);
