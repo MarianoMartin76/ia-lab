@@ -13,12 +13,24 @@ export class FixApplier {
     this.changes = [];
   }
 
+  // Make path relative to rootPath if it's absolute
+  normalizeFilePath(file) {
+    // If path already points to rootPath, make it relative
+    if (file.startsWith(this.rootPath)) {
+      return file.substring(this.rootPath.length + 1);
+    }
+    return file;
+  }
+
   validateFix(fix) {
     if (!fix.file) {
       return { valid: false, reason: 'No file specified' };
     }
 
-    const ext = fix.file.substring(fix.file.lastIndexOf('.'));
+    // Normalize the file path
+    const normalizedFile = this.normalizeFilePath(fix.file);
+
+    const ext = normalizedFile.substring(normalizedFile.lastIndexOf('.'));
     if (!this.safety.allowedExtensions.includes(ext)) {
       return { valid: false, reason: `Extension ${ext} not allowed` };
     }
@@ -29,12 +41,12 @@ export class FixApplier {
       }
     }
 
-    const fullPath = join(this.rootPath, fix.file);
+    const fullPath = join(this.rootPath, normalizedFile);
     if (!existsSync(fullPath)) {
-      return { valid: false, reason: `File ${fix.file} does not exist` };
+      return { valid: false, reason: `File ${normalizedFile} does not exist (tried: ${fullPath})` };
     }
 
-    return { valid: true };
+    return { valid: true, normalizedFile };
   }
 
   applyFix(fix) {
@@ -44,14 +56,16 @@ export class FixApplier {
       return { success: false, reason: validation.reason };
     }
 
+    const normalizedFile = validation.normalizedFile;
+    
     try {
-      const fullPath = join(this.rootPath, fix.file);
+      const fullPath = join(this.rootPath, normalizedFile);
       const originalContent = readFileSync(fullPath, 'utf-8');
       
       let newContent;
       
       // Enhanced logic for handling test file fixes
-      const isTestFile = fix.file.includes('.test.') || fix.file.includes('.spec.');
+      const isTestFile = normalizedFile.includes('.test.') || normalizedFile.includes('.spec.');
       
       if (fix.replaceFrom) {
         // Try exact match first
@@ -93,16 +107,16 @@ export class FixApplier {
       writeFileSync(fullPath, newContent, 'utf-8');
       
       this.changes.push({
-        file: fix.file,
+        file: normalizedFile,
         originalLength: originalContent.length,
         newLength: newContent.length,
         isTestFile
       });
 
-      console.log(`✓ Applied fix to ${fix.file}${isTestFile ? ' (test file)' : ''}`);
-      return { success: true, file: fix.file };
+      console.log(`✓ Applied fix to ${normalizedFile}${isTestFile ? ' (test file)' : ''}`);
+      return { success: true, file: normalizedFile };
     } catch (error) {
-      console.error(`Error applying fix to ${fix.file}:`, error.message);
+      console.error(`Error applying fix to ${normalizedFile}:`, error.message);
       return { success: false, reason: error.message };
     }
   }

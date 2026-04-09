@@ -17,7 +17,20 @@ export class ContextGatherer {
       isTestError: error.errorType?.includes('TestingLibrary') || error.errorMessage?.includes('Unable to find')
     };
 
+    // Normalize error.file - if it's absolute, make it relative
+    let errorFile = error.file || '';
+    
+    // If path is absolute, try to make it relative to rootPath
+    if (errorFile.startsWith('/home/runner/') || errorFile.startsWith('C:\\')) {
+      // Extract relative part - /home/runner/work/ia-lab/ia-lab/frontend/tests/... -> frontend/tests/...
+      const relativeMatch = errorFile.match(/ia-lab\/ia-lab\/(.+)$/);
+      if (relativeMatch) {
+        errorFile = relativeMatch[1];
+      }
+    }
+    
     console.log(`  Error file from parser: ${error.file}`);
+    console.log(`  Normalized error file: ${errorFile}`);
     console.log(`  Is test error: ${context.isTestError}`);
 
     // Priority: If this is a TestingLibrary error, the test FILE should be read directly
@@ -40,7 +53,17 @@ export class ContextGatherer {
     }
 
     // Enhanced: Better test file detection
-    const errorFile = error.file || '';
+    let errorFile = error.file || '';
+    
+    // Normalize absolute paths to relative
+    if (errorFile.startsWith('/home/runner/') || errorFile.startsWith('C:\\')) {
+      const relativeMatch = errorFile.match(/ia-lab\/ia-lab\/(.+)$/);
+      if (relativeMatch) {
+        errorFile = relativeMatch[1];
+      }
+    }
+    
+    // Now errorFile should be like "frontend/tests/InputBroken.test.jsx"
     const testFilePatterns = [
       // Direct test file from error (most likely)
       errorFile.includes('tests/') || errorFile.includes('.test.') ? errorFile : null,
@@ -51,6 +74,8 @@ export class ContextGatherer {
       errorFile.replace('.component.', '.test.'),
       // For frontend/tests/Button.test.jsx case - the test file IS the error file
       errorFile.startsWith('tests/') ? errorFile : null,
+      // Also try removing leading path segment if it's the full path
+      errorFile.includes('/tests/') ? errorFile : null,
     ].filter(Boolean);
 
     // Try to find and read the test file
@@ -71,18 +96,29 @@ export class ContextGatherer {
     }
 
     // Read the source file (the one mentioned in the error)
-    if (error.file) {
-      const fullPath = join(this.rootPath, error.file);
+    // Normalize error.file first
+    let sourceErrorFile = error.file || '';
+    if (sourceErrorFile.startsWith('/home/runner/') || sourceErrorFile.startsWith('C:\\')) {
+      const relativeMatch = sourceErrorFile.match(/ia-lab\/ia-lab\/(.+)$/);
+      if (relativeMatch) {
+        sourceErrorFile = relativeMatch[1];
+      }
+    }
+    
+    if (sourceErrorFile) {
+      const fullPath = join(this.rootPath, sourceErrorFile);
       if (existsSync(fullPath)) {
         try {
           context.sourceCode = readFileSync(fullPath, 'utf-8');
-          context.sourceFile = error.file;
+          context.sourceFile = sourceErrorFile;
+          context.testCode = context.sourceCode; // Use source as test code too
+          console.log(`  ✓ Read source file: ${sourceErrorFile}`);
         } catch (e) {
           console.error('Could not read source file:', e.message);
         }
       } else {
         // File might be in a different location, try common patterns
-        console.log(`  File ${error.file} not found directly, searching...`);
+        console.log(`  File ${sourceErrorFile} not found directly, searching...`);
       }
     }
 
