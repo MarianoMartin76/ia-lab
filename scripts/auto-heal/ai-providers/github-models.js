@@ -22,7 +22,7 @@ Response format:
 
 export class GitHubModelsProvider {
   constructor(config = {}) {
-    this.model = config.model || 'gpt-4o-mini';
+    this.model = config.model || 'openai/gpt-4o-mini';
     this.timeout = config.timeout || 60000;
   }
 
@@ -31,12 +31,14 @@ export class GitHubModelsProvider {
     
     try {
       const response = await fetch(
-        'https://models.inference.ai.azure.com/v1/chat/completions',
+        'https://models.github.ai/inference/chat/completions',
         {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28'
           },
           body: JSON.stringify({
             model: this.model,

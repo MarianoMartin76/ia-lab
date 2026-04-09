@@ -137,6 +137,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      models: read
     outputs:
       healed: ${{ steps.heal.outputs.healed }}
       attempt: ${{ steps.heal.outputs.attempt }}
