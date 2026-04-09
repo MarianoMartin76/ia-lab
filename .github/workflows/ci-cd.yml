@@ -139,6 +139,8 @@ jobs:
       pull-requests: write
     outputs:
       healed: ${{ steps.heal.outputs.healed }}
+      attempt: ${{ steps.heal.outputs.attempt }}
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -152,101 +154,97 @@ jobs:
         with:
           node-version: '20'
       
-      - name: Run tests and capture output
-        id: tests
+      - name: Determine attempt number
+        id: attempt-check
         run: |
-          echo "=== Running tests to identify failures ==="
+          ATTEMPTS=$(gh run list --workflow ci-cd.yml --event pull_request \
+            --head-branch ${{ github.head_ref }} --json runNumber --jq length 2>/dev/null || echo 0)
+          CURRENT=$((ATTEMPTS + 1))
+          if [ $CURRENT -gt 3 ]; then CURRENT=3; fi
+          echo "attempt=$CURRENT" >> $GITHUB_OUTPUT
+      
+      - name: Run AI Auto-Heal
+        if: steps.attempt-check.outputs.attempt <= 3
+        id: heal
+        run: |
+          echo "=== Running AI Auto-Heal (Attempt ${{ steps.attempt-check.outputs.attempt }}/3) ==="
           
-          # Backend tests
+          # Install dependencies for script
+          cd scripts/auto-heal
+          npm install
+          
+          # Run tests and save results to artifacts
+          cd ../..
+          mkdir -p test-results
+          
+          echo "Running backend tests..."
           cd backend
-          npm ci 2>/dev/null || true
+          npm ci
           npx prisma generate
           npx prisma db push
-          npm test 2>&1 | tee backend-test.log || true
-          BACKEND_EXIT=$?
+          npm test -- --json --outputFile=test-results/backend-results.json 2>&1 | tee test-results/backend-output.log || true
           cd ..
           
-          # Frontend tests  
+          echo "Running frontend tests..."
           cd frontend
-          npm ci 2>/dev/null || true
-          npm test 2>&1 | tee frontend-test.log || true
-          FRONTEND_EXIT=$?
+          npm ci
+          npm test -- --reporter=json --output=test-results/frontend-results.json 2>&1 | tee test-results/frontend-output.log || true
           cd ..
           
-          if [ $BACKEND_EXIT -eq 0 ] && [ $FRONTEND_EXIT -eq 0 ]; then
-            echo "healed=true" >> $GITHUB_OUTPUT
+          # Run AI heal script
+          cd scripts/auto-heal
+          node index.js \
+            --test-results ../../test-results \
+            --context-root ../.. \
+            --ai-provider github-models \
+            --max-attempts 3 \
+            --current-attempt ${{ steps.attempt-check.outputs.attempt }}
+          
+          # Read result
+          if [ -f heal-result.json ]; then
+            HEALED=$(cat heal-result.json | jq -r '.healed')
+            echo "healed=$HEALED" >> $GITHUB_OUTPUT
+            echo "attempt=${{ steps.attempt-check.outputs.attempt }}" >> $GITHUB_OUTPUT
           else
             echo "healed=false" >> $GITHUB_OUTPUT
           fi
       
-      - name: Try common fixes
-        if: steps.tests.outputs.healed != 'true'
+      - name: Push fix branch if healed
+        if: steps.heal.outputs.healed == 'true'
         run: |
-          echo "=== Attempting common fixes ==="
-          
-          # Fix: Reinstall dependencies
-          cd backend && rm -rf node_modules package-lock.json && npm install && cd ..
-          cd frontend && rm -rf node_modules package-lock.json && npm install && cd ..
-          
-          # Fix: Regenerate Prisma
-          cd backend && npx prisma generate && npx prisma db push && cd ..
-      
-      - name: Run tests after fixes
-        id: retest
-        run: |
-          echo "=== Re-running tests after fixes ==="
-          
-          cd backend
-          npm test 2>&1 | tee backend-retest.log || true
-          BACKEND_EXIT=$?
-          cd ..
-          
-          cd frontend
-          npm test 2>&1 | tee frontend-retest.log || true
-          FRONTEND_EXIT=$?
-          cd ..
-          
-          if [ $BACKEND_EXIT -eq 0 ] && [ $FRONTEND_EXIT -eq 0 ]; then
-            echo "healed=true" >> $GITHUB_OUTPUT
-          else
-            echo "healed=false" >> $GITHUB_OUTPUT
-          fi
-      
-      - name: Commit fixes if successful
-        if: steps.retest.outputs.healed == 'true'
-        run: |
-          BRANCH_NAME="auto-heal/fix-${{ github.run_id }}"
+          BRANCH_NAME="auto-heal/attempt-${{ steps.heal.outputs.attempt }}-${{ github.run_id }}"
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b $BRANCH_NAME
           git add -A
           if ! git diff --cached --quiet; then
-            git commit -m "Auto-heal: Fixed test failures"
+            git commit -m "🤖 Auto-heal: Fix test failures (attempt ${{ steps.heal.outputs.attempt }})"
             git push -u origin $BRANCH_NAME --force || echo "Push failed"
           fi
       
-      - name: Comment on PR
+      - name: Comment on PR with results
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
-            const healed = ${{ steps.retest.outputs.healed }};
-            const attempt = ${{ github.run_id }} % 3 + 1;
+            const healed = '${{ steps.heal.outputs.healed }}' === 'true';
+            const attempt = ${{ steps.heal.outputs.attempt }} || 1;
             const maxAttempts = 3;
             
-            let body = `### 🤖 Auto-Heal Attempt ${attempt}/${maxAttempts}\n\n`;
+            let body = `### 🤖 Auto-Heal Report (Attempt ${attempt}/${maxAttempts})\n\n`;
             
-            if (healed === 'true') {
-              body += `✅ **Tests fixed automatically!**\n`;
-              body += `A fix was applied and tests are now passing.\n`;
-              body += `Branch 'auto-heal/fix-${{ github.run_id }}' created with the fix.\n`;
+            if (healed) {
+              body += `✅ **Tests Fixed Automatically!**\n`;
+              body += `AI analyzed the errors and applied a fix.\n`;
+              body += `Branch: \`auto-heal/attempt-${attempt}-${{ github.run_id }}\`\n`;
+              body += `\n_Tests will be re-run automatically._`;
             } else {
-              body += `❌ **Could not auto-heal**\n`;
-              body += `Attempted common fixes but tests still failing.\n`;
+              body += `❌ **Could Not Auto-Heal**\n`;
+              body += `Attempted AI analysis but could not generate a fix.\n`;
               if (attempt >= maxAttempts) {
                 body += `\n⚠️ **Max attempts reached. Manual review required.**`;
               } else {
-                body += `\n_Will retry automatically on next push_`;
+                body += `\n_Will retry on next push._`;
               }
             }
             
@@ -257,11 +255,13 @@ jobs:
               body: body
             })
       
-      - name: Fail if not healed
-        if: steps.retest.outputs.healed != 'true'
+      - name: Summary
         run: |
-          echo "::warning::Auto-heal: Could not fix tests. Manual review required."
-          # Exit 0 to not block workflow, but status is warning
+          if [ "${{ steps.heal.outputs.healed }}" == "true" ]; then
+            echo "✅ Auto-heal succeeded!"
+          else
+            echo "❌ Auto-heal failed. Manual review required."
+          fi
 
   merge:
     needs: [test-backend, test-frontend, auto-heal]

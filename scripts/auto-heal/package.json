@@ -1,0 +1,11 @@
+{
+  "name": "auto-heal",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "AI-powered auto-heal system for test failures",
+  "scripts": {
+    "heal": "node index.js",
+    "test": "echo \"No tests yet\""
+  },
+  "dependencies": {}
+}
