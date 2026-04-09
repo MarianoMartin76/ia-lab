@@ -6,7 +6,7 @@ import Button from '../src/components/Button';
 describe('Button Component', () => {
   it('renders button with text', () => {
     render(<Button>Click me</Button>);
-    expect(screen.getByText('Click my')).toBeInTheDocument();
+    expect(screen.getByText('Click me')).toBeInTheDocument();
   });
 
   it('renders with type attribute', () => {

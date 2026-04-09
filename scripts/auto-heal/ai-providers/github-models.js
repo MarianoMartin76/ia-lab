@@ -68,27 +68,91 @@ export class GitHubModelsProvider {
   buildPrompt(context) {
     const { error, sourceCode, testCode, spec } = context;
     
-    let prompt = `TEST FAILURE:
-- File: ${error.file}
-- Test: ${error.test || 'N/A'}
-- Error: ${error.errorMessage || error.messages?.join(' ') || 'Test failed'}
-- Stack: ${error.stack?.[0] || 'N/A'}
+    // Enhanced error analysis
+    const errorType = error.errorType || error.type || 'Unknown';
+    const errorMessage = error.errorMessage || error.messages?.join('\n') || 'Test failed';
+    const stackInfo = error.stack?.[0] || '';
+    const testName = error.test || '';
+    
+    let prompt = `# Test Failure Analysis and Fix
+
+## Error Details
+- **Error Type**: ${errorType}
+- **Test Name**: ${testName || 'N/A'}
+- **Source File**: ${error.file || 'Unknown'}
+
+### Exact Error Message:
+\`\`\`
+${errorMessage}
+\`\`\`
+
+### Stack Trace:
+${stackInfo || 'N/A'}
 
 `;
 
+    // Determine if this is a test code issue vs source code issue
+    const isLikelyTestIssue = 
+      errorType.includes('TestingLibrary') || 
+      errorType.includes('AssertionError') ||
+      errorMessage.includes('Unable to find') ||
+      errorMessage.includes('expected') ||
+      errorMessage.includes('received');
+    
+    if (isLikelyTestIssue) {
+      prompt += `## Analysis
+This appears to be a TEST CODE issue (not a bug in the application code). 
+The test is either:
+1. Looking for wrong text (typo in test assertion)
+2. Missing element in component being tested
+3. Wrong selector/query used
+4. Component not rendering expected content
+
+`;
+    } else {
+      prompt += `## Analysis
+This appears to be an APPLICATION CODE issue (the source code has a bug).
+The test is correctly catching an error in the production code.
+`;
+    }
+
     if (sourceCode) {
-      prompt += `SOURCE CODE:\n\`\`\`javascript\n${sourceCode}\n\`\`\`\n\n`;
+      prompt += `## Source Code (${error.file})
+\`\`\`
+${sourceCode}
+\`\`\`
+`;
     }
     
     if (testCode) {
-      prompt += `TEST CODE:\n\`\`\`javascript\n${testCode}\n\`\`\`\n\n`;
+      prompt += `## Test Code
+\`\`\`
+${testCode}
+\`\`\`
+`;
     }
     
     if (spec) {
-      prompt += `SPEC.md CONTEXT:\n${spec}\n\n`;
+      prompt += `## SPEC.md Requirements
+\`\`\`
+${spec.substring(0, 3000)}
+\`\`\`
+`;
     }
 
-    prompt += `Generate a fix in JSON format.`;
+    prompt += `
+## Fix Instructions
+1. If this is a TEST CODE issue (like a typo in test text), FIX THE TEST FILE
+2. If this is an APPLICATION CODE issue, fix the source file
+3. Output ONLY a JSON object with the fix details
+
+Response format:
+{
+  "file": "path/to/file-to-fix",
+  "changes": "exact code replacement or addition",
+  "replaceFrom": "optional - exact code to replace (include surrounding context for uniqueness)",
+  "commitMessage": "fix: brief description of what was fixed"
+}`;
     
     return prompt;
   }

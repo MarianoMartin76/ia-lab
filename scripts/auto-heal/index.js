@@ -51,6 +51,13 @@ console.log(`Context root: ${options.contextRoot}`);
 console.log(`AI Provider: ${options.aiProvider}`);
 console.log('');
 
+// Debug: Show what files exist
+console.log('📁 Checking test results files...');
+console.log(`  test-results exists: ${existsSync(options.testResults)}`);
+console.log(`  backend-results.json exists: ${existsSync(join(options.testResults, 'backend-results.json'))}`);
+console.log(`  frontend-results.json exists: ${existsSync(join(options.testResults, 'frontend-results.json'))}`);
+console.log('');
+
 let allErrors = [];
 
 console.log('📊 Analyzing Backend Tests...');

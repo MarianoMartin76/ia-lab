@@ -12,9 +12,65 @@ export class ContextGatherer {
       sourceCode: null,
       testCode: null,
       spec: null,
-      config: {}
+      config: {},
+      errorFile: error.file,
+      isTestError: error.errorType?.includes('TestingLibrary') || error.errorMessage?.includes('Unable to find')
     };
 
+    console.log(`  Error file from parser: ${error.file}`);
+    console.log(`  Is test error: ${context.isTestError}`);
+
+    // Priority: If this is a TestingLibrary error, the test FILE should be read directly
+    // The error.file might actually be the test file already in many cases
+    if (context.isTestError && error.file) {
+      // Direct test file path
+      const directTestPath = join(this.rootPath, error.file);
+      if (existsSync(directTestPath)) {
+        try {
+          context.testCode = readFileSync(directTestPath, 'utf-8');
+          context.testFile = error.file;
+          context.sourceFile = error.file;
+          context.sourceCode = context.testCode; // Use test code as source for test errors
+          console.log(`  ✓ Direct test file read: ${error.file}`);
+          return context;
+        } catch (e) {
+          console.log(`  Could not read direct test file: ${e.message}`);
+        }
+      }
+    }
+
+    // Enhanced: Better test file detection
+    const errorFile = error.file || '';
+    const testFilePatterns = [
+      // Direct test file from error (most likely)
+      errorFile.includes('tests/') || errorFile.includes('.test.') ? errorFile : null,
+      // Common patterns for test files
+      errorFile.includes('/src/') ? errorFile.replace('/src/', '/tests/') : null,
+      errorFile.replace(/\.(js|jsx|ts|tsx)$/, '.test.$1'),
+      errorFile.replace(/\.(js|jsx|ts|tsx)$/, '.spec.$1'),
+      errorFile.replace('.component.', '.test.'),
+      // For frontend/tests/Button.test.jsx case - the test file IS the error file
+      errorFile.startsWith('tests/') ? errorFile : null,
+    ].filter(Boolean);
+
+    // Try to find and read the test file
+    for (const testPath of testFilePatterns) {
+      if (testPath) {
+        const fullTestPath = join(this.rootPath, testPath);
+        if (existsSync(fullTestPath)) {
+          try {
+            context.testCode = readFileSync(fullTestPath, 'utf-8');
+            context.testFile = testPath;
+            console.log(`  Found test file: ${testPath}`);
+            break;
+          } catch (e) {
+            console.log(`  Could not read test file ${testPath}: ${e.message}`);
+          }
+        }
+      }
+    }
+
+    // Read the source file (the one mentioned in the error)
     if (error.file) {
       const fullPath = join(this.rootPath, error.file);
       if (existsSync(fullPath)) {
@@ -24,22 +80,9 @@ export class ContextGatherer {
         } catch (e) {
           console.error('Could not read source file:', e.message);
         }
-      }
-    }
-
-    const testPatterns = [
-      error.file?.replace('/src/', '/tests/'),
-      error.file?.replace('.js', '.test.js'),
-      error.file?.replace('.jsx', '.test.jsx'),
-    ];
-    
-    for (const testPath of testPatterns || []) {
-      if (testPath && existsSync(join(this.rootPath, testPath))) {
-        try {
-          context.testCode = readFileSync(join(this.rootPath, testPath), 'utf-8');
-          context.testFile = testPath;
-          break;
-        } catch (e) {}
+      } else {
+        // File might be in a different location, try common patterns
+        console.log(`  File ${error.file} not found directly, searching...`);
       }
     }
 
