@@ -231,24 +231,15 @@ jobs:
       
       - name: Push fix branch and create PR
         if: steps.heal.outputs.healed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          BRANCH_NAME="auto-heal/attempt-${{ steps.heal.outputs.attempt }}-${{ github.run_id }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b $BRANCH_NAME
-          git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m "🤖 Auto-heal: Fix test failures (attempt ${{ steps.heal.outputs.attempt }})"
-            git push -u origin $BRANCH_NAME --force || echo "Push failed"
-            
-            # Create PR
-            gh pr create \
-              --title "Auto-Heal: Fix test failures (Attempt ${{ steps.heal.outputs.attempt }})" \
-              --body "Auto-heal system fixed test failures. Attempt: ${{ steps.heal.outputs.attempt }}/3" \
-              --base main || echo "PR creation failed"
-          fi
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: auto-heal/attempt-${{ steps.heal.outputs.attempt }}-${{ github.run_id }}
+          delete-branch: false
+          title: "Auto-Heal: Fix test failures (Attempt ${{ steps.heal.outputs.attempt }})"
+          body: "Auto-heal system fixed test failures. Attempt: ${{ steps.heal.outputs.attempt }}/3"
+          base: main
+          labels: auto-heal, automated
       
       - name: Comment on PR with results
         if: github.event_name == 'pull_request'
