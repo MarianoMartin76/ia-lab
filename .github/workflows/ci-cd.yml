@@ -231,6 +231,8 @@ jobs:
       
       - name: Push fix branch and create PR
         if: steps.heal.outputs.healed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           BRANCH_NAME="auto-heal/attempt-${{ steps.heal.outputs.attempt }}-${{ github.run_id }}"
           git config user.name "github-actions[bot]"
