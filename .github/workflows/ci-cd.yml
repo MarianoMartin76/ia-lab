@@ -229,17 +229,19 @@ jobs:
             echo "healed=false" >> $GITHUB_OUTPUT
           fi
       
-      - name: Push fix branch and create PR
+      - name: Push fix branch
         if: steps.heal.outputs.healed == 'true'
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: auto-heal/attempt-${{ steps.heal.outputs.attempt }}-${{ github.run_id }}
-          delete-branch: false
-          title: "Auto-Heal: Fix test failures (Attempt ${{ steps.heal.outputs.attempt }})"
-          body: "Auto-heal system fixed test failures. Attempt: ${{ steps.heal.outputs.attempt }}/3"
-          base: main
-          labels: auto-heal, automated
+        run: |
+          BRANCH_NAME="auto-heal/attempt-${{ steps.heal.outputs.attempt }}-${{ github.run_id }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b $BRANCH_NAME
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "🤖 Auto-heal: Fix test failures (attempt ${{ steps.heal.outputs.attempt }})"
+            git push -u origin $BRANCH_NAME --force || echo "Push failed"
+            echo "Branch pushed. Create PR manually if needed."
+          fi
       
       - name: Comment on PR with results
         if: github.event_name == 'pull_request'
@@ -253,10 +255,12 @@ jobs:
             let body = `### 🤖 Auto-Heal Report (Attempt ${attempt}/${maxAttempts})\n\n`;
             
             if (healed) {
-              body += `✅ **Tests Fixed Automatically!**\n`;
-              body += `AI analyzed the errors and applied a fix.\n`;
-              body += `Branch: \`auto-heal/attempt-${attempt}-${{ github.run_id }}\`\n`;
-              body += `\n_Tests will be re-run automatically._`;
+              const branchName = "auto-heal/attempt-" + attempt + "-${{ github.run_id }}";
+              body += "✅ **Tests Fixed Automatically!**\n";
+              body += "AI analyzed the errors and applied a fix.\n";
+              body += "\n**Branch:** `" + branchName + "`\n";
+              body += "\n**Create PR:** https://github.com/${{ github.repository }}/pull/new/" + branchName + "\n";
+              body += "\n_Run tests on the branch and merge manually if they pass._";
             } else {
               body += `❌ **Could Not Auto-Heal**\n`;
               body += `Attempted AI analysis but could not generate a fix.\n`;
