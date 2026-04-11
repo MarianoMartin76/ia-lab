@@ -111,7 +111,7 @@ try {
     const logErrors = parseVitestOutput(log);
     if (logErrors.length > 0 && allErrors.length === 0) {
       console.log(`  Found ${logErrors.length} errors from log parsing`);
-      allErrors.push(...logErrors.map(e => ({ ...e, backend: false })));
+      //allErrors.push(...logErrors.map(e => ({ ...e, backend: false })));
     }
   }
 } catch (e) {
