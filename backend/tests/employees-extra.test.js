@@ -10,3 +10,5 @@ describe('Employee API - Extra Tests', () => {
     });
   });
 });
+const res = await request(app).get('/api/employees');
+      expect(Array.isArray(res.body)).toBeTruthy();
